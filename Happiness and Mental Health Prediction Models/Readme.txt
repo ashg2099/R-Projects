@@ -1,0 +1,4 @@
+1. Regression (Rank 110): Built and optimized multiple regression models to predict happiness levels based on survey data. Applied multiple linear regression, stepwise regression (BIC), and feature selection to improve model performance, evaluated using RMSE.
+2. Classification (Rank 9): Developed a Random Forest model to predict mental health categories, achieving a top-10 rank in the competition. Leveraged Recursive Feature Elimination (RFE) and hyperparameter tuning to optimize the model for high-dimensional data.
+3. Applied techniques like multiple linear regression, stepwise regression (BIC), and root mean squared error (RMSE) evaluation to assess model performance.
+4. Utilized advanced techniques like XGBoost for model boosting, cross-validation, and feature engineering to improve prediction accuracy in both tasks.
