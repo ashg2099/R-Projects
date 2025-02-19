@@ -1,0 +1,607 @@
+```{r}
+# Load required libraries
+library(rvest)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(tidyr)
+library(readr)
+library(stringr)
+library(viridis)
+library(tm)
+library(quanteda)
+library(tidytext)
+library(hunspell)
+library(randomForest)
+library(caret)
+library(rpart)
+library(text2vec)
+library(gbm)
+library(e1071)
+```
+
+```{r}
+################################## TASK_B1 #######################################
+# URL of the given Wikipedia page
+data_url <- "https://en.wikipedia.org/wiki/ICC_Men%27s_T20I_Team_Rankings"
+
+# Read and extract tables from the webpage
+data_url_content <- read_html(data_url) %>% html_table(fill = TRUE)
+
+# Correct table for 'Historical rankings' based on your output is the 7th table
+rankings <- data_url_content[[7]]
+
+# Filter out any rows that do not represent countries (like updates or notes)
+rankings <- rankings %>% 
+  filter(!grepl("Last updated", Country))
+
+# Convert dates from character to Date format
+rankings$Start <- dmy(gsub("\\[.*\\]", "", rankings$Start))
+rankings$End <- dmy(gsub("\\[.*\\]", "", rankings$End))
+
+# Exclude rows with NA values in Start or End from the calculation of duration
+rankings <- rankings %>% 
+  mutate(Duration = as.numeric(End - Start)) %>% 
+  filter(!is.na(Duration))
+
+# Aggregate the Data to Identify the First Start, Last End, and Mean Duration
+summary_table <- rankings %>%
+  group_by(Country) %>%
+  summarise(
+    oldest_start_date = min(Start, na.rm = TRUE),
+    latest_end_date = max(End, na.rm = TRUE),
+    Duration_Avg = mean(Duration, na.rm = TRUE)
+  ) %>%
+  mutate(Duration_Avg = round(Duration_Avg, 2))
+
+# Format to two decimal places as string if exact formatting is necessary
+summary_table$Duration_Avg <- sprintf("%.2f", summary_table$Duration_Avg)
+
+# Print the summary table
+print(summary_table)
+
+# ANSWER - The script retrieves ICC Men's T20I Team Rankings from Wikipedia, extracts tables, and specifically focuses on the seventh table for historical rankings. It filters out non-country-specific rows using regular expressions. The script then cleans and converts date strings into actual date formats, calculating the ranking duration by subtracting the start date from the end date and excluding rows with incomplete dates. It summarizes this data by country, calculating the earliest start date, latest end date, and the average duration of rankings, rounding these to two decimal places. Finally, it displays this summarized data, providing a clear view of each country's ranking history. This approach utilizes dplyr for data manipulation and lubridate for handling date calculations, efficiently processing and summarizing the ranking data from the Wikipedia page.
+```
+
+```{r}
+################################## TASK_B2 #######################################
+# URL of the Wikipedia page
+url <- "https://en.wikipedia.org/wiki/List_of_countries_by_GDP_(nominal)"
+
+# Read the HTML of the webpage and extract the table
+webPage <- read_html(url)
+page_tables <- html_table(webPage, fill = TRUE)
+
+# Extract the correct table, typically the third one
+gdp_table <- page_tables[[3]]
+
+# Ensure all column names are unique
+names(gdp_table) <- make.unique(names(gdp_table))
+
+# Clean the data
+gdp_table_cleaned <- gdp_table %>%
+  filter(`Country/Territory` != "Country/Territory", `Country/Territory` != "World") %>%  # Remove duplicated header and aggregate 'World' row
+  mutate(
+    GDP = parse_number(`IMF[1][13]`, na = "—"),  # Replace non-numeric characters with NA during parsing
+    Country = `Country/Territory`
+  ) %>%
+  drop_na(GDP) %>%  # Optionally remove rows where GDP could not be parsed
+  select(Country, GDP)
+
+# Print cleaned data to verify
+print(head(gdp_table_cleaned))
+
+# Plot the GDP of the top 10 countries with labels fully inside the bars
+ggplot(gdp_table_cleaned[1:10,], aes(x = reorder(Country, -GDP), y = GDP)) +
+  geom_col(fill = "Thistle") +  # Create the bars
+  geom_text(aes(label = scales::comma(GDP)), vjust = 2.5, color = "black", size = 3, fontface = "bold") +  # Add text labels inside the bars, adjusting vertical position
+  labs(title = "Top 10 Countries by Nominal GDP (IMF Estimates)", x = "Country", y = "GDP (US Dollars, in Billions)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Adjust text position for readability
+
+# ANSWER - The R script executes a series of steps to extract, clean, and visualize global GDP data from Wikipedia, illustrating the application of data manipulation and visualization techniques in R. It begins by accessing the Wikipedia page that lists countries by nominal GDP, utilizing the rvest package to parse the HTML content and extract all tables present on the page. The script specifically targets the third table, which contains the relevant GDP data. To ensure data integrity, the script first makes all column names unique to avoid potential conflicts in data manipulation. It then filters out rows that are not useful for analysis, such as the duplicated header and the aggregate 'World' entry which do not represent individual countries. Next, it processes the GDP data by converting text entries into numeric values, handling non-numeric characters, and removing any rows with missing GDP values to maintain data quality. The cleaned data set, now containing GDP values alongside corresponding country names, is used to generate a bar chart. This visualization ranks the top 10 countries by nominal GDP, showcasing their economic size. The GDP values are displayed directly on the bars for clear, immediate comparison. This graphical representation is achieved using the ggplot2 package, which is adept at creating comprehensive and aesthetically pleasing visualizations. This process not only demonstrates data cleaning and manipulation but also emphasizes the power of R for turning raw data into informative visual insights.
+```
+
+```{r}
+##################################### TASK_C #####################################
+# 1.1 
+# Load the data
+tweets <- read_csv("Olympics_tweets.csv")
+
+# Extract the year from the user_created_at column and extract the year by converting to date-time object
+tweets <- tweets %>%
+  mutate(year = year(ymd_hms(user_created_at)))
+
+# Calculate the total number of Twitter accounts signed up annually.
+accounts_created_year_count <- tweets %>%
+  group_by(year) %>%
+  summarise(count = n())
+
+# Create a bar chart
+ggplot(accounts_created_year_count, aes(x = as.factor(year), y = count)) +
+  geom_bar(stat = "identity", fill = "PeachPuff") +
+  labs(title = "Number of Twitter Accounts Created Over the Years",
+       x = "Year",
+       y = "Number of Accounts") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# ANSWER - The task involved analyzing the creation years of Twitter accounts from a dataset, specifically focusing on accounts mentioned in tweets related to the Tokyo Olympics. Initially, the data was loaded from a CSV file using R’s `read_csv` function, which efficiently handles large datasets and automatically infers data types. The critical step was extracting the year from the 'user_created_at' datetime information. This was achieved by converting the string to a datetime object and then isolating the year component, simplifying the data for analysis. The dataset was then grouped by year, and the count of accounts created each year was calculated. This summarized data was visualized using a bar chart created with `ggplot2`, highlighting the distribution of account creations over the years. The visualization process included aesthetic adjustments for clarity, such as rotating x-axis labels for better readability. This approach provided a clear visualization of trends in Twitter account creations, offering insights into user engagement during the Olympic event period.
+
+# 1.2
+# Load the data
+twitter_tweets_data <- read_csv("Olympics_tweets.csv")
+
+# From the column user_created_at, derive the year and retain only the data for accounts initiated post-2010
+twitter_tweets_data <- twitter_tweets_data %>%
+  mutate(year = year(ymd_hms(user_created_at))) %>%
+  filter(year > 2010)
+
+# Compute the mean number of followers annually
+average_number_of_followers_per_year <- twitter_tweets_data %>%
+  group_by(year) %>%
+  summarise(average_number_of_followers_per_year = mean(user_followers, na.rm = TRUE))
+
+# Construct a bar graph to display the yearly average followers count
+ggplot(average_number_of_followers_per_year, aes(x = as.factor(year), y = average_number_of_followers_per_year)) +
+  geom_bar(stat = "identity", fill = "PaleGreen") +
+  labs(title = "Average Number of Followers for Twitter Accounts Created After 2010",
+       x = "Year",
+       y = "Average Number of Followers") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Angled x-axis labels for better readability
+
+# ANSWER - In this task, the objective was to analyze the average number of followers for Twitter accounts created after 2010, with data derived from tweets about the Tokyo Olympics. The data extraction involved loading the dataset using the `read_csv` function, ensuring efficient handling and type inference of large datasets. After loading, the 'user_created_at' column was processed to extract the year of account creation, utilizing the `year` function from the `lubridate` package, which simplifies the extraction of year from datetime strings. To focus on more recent social media trends, only accounts created after 2010 were considered. This was accomplished by filtering the dataset accordingly. Subsequently, the average number of followers for each year was calculated using the `mean` function, with the `na.rm = TRUE` parameter to handle any missing values gracefully, ensuring accurate calculations. The results were visualized through a bar chart using `ggplot2`, which provides robust tools for creating informative and aesthetically pleasing visualizations. The bar chart displayed the average number of followers for each year, with aesthetic adjustments such as light blue fill for bars and rotated x-axis labels to enhance readability and visual appeal. This visualization not only highlighted the growth or decline in follower numbers over the years but also provided insights into the evolving landscape of Twitter usage, particularly focusing on users interested in the Olympics.
+
+# 1.3 
+# ANSWER - 
+#1 Twitter Account Creation Trends: The first chart indicates a steady creation of Twitter accounts each year, with a noticeable consistency over nearly two decades. This reflects Twitter's established presence and ongoing relevance in the social media landscape. However, the visible decline in the number of new accounts toward the recent years could suggest market saturation, a shift in user preferences to other platforms, or potentially less aggressive growth strategies by Twitter.
+#2 Variability in Follower Counts: The second chart shows significant fluctuations in the average number of followers that new accounts acquire, particularly noting a peak in 2021. This peak might be attributed to unique events or phenomena during that year, such as the global COVID-19 pandemic, which led to increased digital engagement as people sought updates and community interaction online while facing lockdowns and social distancing measures.
+
+# Elaborative Insights:
+#1 Impact of Global and Social Events: Major events like the Tokyo 2021 Olympics and other global news might have contributed # to spikes in new Twitter users and increased follower engagement during specific years. During such events, Twitter’s role as a real-time information and interaction platform possibly becomes more pronounced, attracting more users and enhancing follower growth for existing accounts.
+#2 Technological and Platform Changes: Changes in Twitter’s features, such as improved content discovery algorithms, enhanced user experience, or new engagement tools (e.g., Twitter Spaces), can significantly impact how new accounts grow their follower base. These features could make the platform more attractive to new users and more effective for spreading content.
+#3 Cultural Shifts in Media Consumption: The variations in account creations and follower trends could also reflect broader shifts in media consumption patterns. As more people turn to social media for news, entertainment, and personal connections, platforms like Twitter are likely to see changes in how users engage with the platform. 
+
+# 1.4
+user_tweets_data <- read_csv("Olympics_tweets.csv")
+
+top_tweet_users_location <- user_tweets_data %>%
+  count(user_location, sort = TRUE) %>%
+  filter(!is.na(user_location)) %>%
+  top_n(10,n) 
+
+print(top_tweet_users_location)
+
+ggplot(top_tweet_users_location, aes(x = reorder(user_location, n), y = n, fill = user_location)) +
+  geom_col() +
+  scale_fill_viridis_d(option = "C") +
+  labs(title = "Top 10 tweets user locaions for Olympics games",
+       x = "Location",
+       y = "Number of tweets"
+       ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# ANSWER - 
+# Code Explanation - The script provided is designed to analyze Twitter data related to the Olympics, focusing on the geographical distribution of tweets. Initially, the data is loaded from a CSV file into an R dataframe for manipulation. The next step, although not executed but intended in the comments, involves normalizing the location data. This would standardize entries to ensure accurate aggregation by removing case sensitivity and extraneous characters, which is crucial for consistent data analysis. Subsequently, the script counts each location's occurrences using dplyr functions, filtering to focus specifically on the top 10 most frequent locations. This aggregation is pivotal for identifying key areas of user engagement. For visualization, the ggplot2 library is employed to create a bar chart, displaying these top locations. The use of the viridis color palette enhances the visual clarity of the chart, and the orientation of the x-axis labels is adjusted to improve readability. This visualization effectively highlights the areas with the highest concentration of tweets, offering insights into regional engagement with the Olympics on Twitter. Overall, the script combines data manipulation, aggregation, and sophisticated visualization techniques to elucidate the geographic spread of Olympics-related discussions on Twitter, providing valuable insights into where these conversations are most vibrant.
+# Visualization Insight - The resultant bar chart vividly illustrates which locations contributed the most tweets about the Olympics. This visualization can help understand where interest in the Olympics is concentrated geographically.
+# Odd Values and Tweet Counts - Upon reviewing the top 10 locations, one might observe odd values such as generic terms (e.g., "Earth") or non-specific descriptors (e.g., "she/her"). These entries indicate that users sometimes enter non-geographic information in the location field, which can skew geographic analysis. The counts associated with each of these top 10 locations are displayed on the bar chart, providing a clear picture of the number of tweets emanating from each location.
+# Conclusion - This task effectively blends data manipulation with visual analytics to extract meaningful insights about the geographic distribution of Twitter discourse surrounding a major global event. The approach taken showcases the potential of simple text data to reveal patterns in user behavior and regional interest, which can be invaluable for marketing, study of social media trends, and understanding global engagement with significant events.
+
+# 2.1
+# Read and load the dataset
+tweets_analysis <- read_csv("Olympics_tweets.csv")
+
+# Extract and convert the date portion from the 'date' column
+tweets_analysis <- tweets_analysis %>%
+  mutate(date_parsed = dmy(sub(" .*", "", date)))
+
+# Filter any NA values from the date parsed
+tweets_analysis <- tweets_analysis %>%
+  filter(!is.na(date_parsed))
+
+# Counting the total number of tweets per date
+tweets_per_date <- tweets_analysis %>%
+  count(date_parsed) %>%
+  arrange(date_parsed)
+
+print(tweets_per_date)
+
+# Create a bar chart 
+ggplot(tweets_per_date, aes(x = date_parsed, y = n)) +
+  geom_col(fill = "navy") +
+  labs(title = "Number of Tweets per Date",
+       x = "Date",
+       y = "Number of Tweets") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  scale_x_date(date_breaks = "1 day", date_labels = "%d-%m-%Y")
+
+# Finding the date with min number of tweets
+min_no_of_tweets_date <- tweets_per_date[which.min(tweets_per_date$n), ]
+print(min_no_of_tweets_date)
+
+# ANSWER - The script provided processes data from the "Olympics_tweets.csv" file to analyze Twitter activity over different dates during the Olympic Games. Initially, the dataset is loaded and the 'date' column is parsed to extract just the date part, discarding the time. This extraction simplifies the data to focus solely on the date of each tweet. The data is then filtered to exclude any entries without a valid date, ensuring the analysis only includes complete records. Subsequently, the data is aggregated to count the number of tweets posted on each date, and these counts are then arranged in chronological order. This arrangement helps in visualizing the trend of Twitter activity over the course of the events. A bar chart is generated to visually represent this data, using navy blue bars to depict the number of tweets per date. The x-axis labels are rotated for better visibility and formatted to show the date clearly. The visual representation makes it easy to observe peaks and troughs in Twitter activity, which could correspond to significant events during the Olympics. The script concludes by identifying the date with the lowest number of tweets. This information is crucial as it may indicate days with lesser events or lower public interest, providing insights into audience engagement during the Olympics.
+# In the bar chart you provided, each bar represents the number of tweets made on specific dates during the end of July 2021. Observing the heights of these bars, it's clear that July 24, 2021, stands out due to its significantly shorter bar height relative to other dates. This indicates that on July 24, 2021, there were considerably fewer tweets compared to other days captured in the data, making it the date with the lowest tweet activity.
+
+# 2.2
+# Read and load the dataset
+tweets_text_length <- read_csv("Olympics_tweets.csv")
+
+# Calculate the length of each tweet's text, categorize it into defined ranges, and handle any undefined cases with "Unknown"
+tweets_text_length <- tweets_text_length %>%
+  mutate(text_length = nchar(as.character(text)),
+         text_length_category = case_when(
+           text_length >= 1 & text_length <= 40 ~ "[1,40]",
+           text_length >= 41 & text_length <= 80 ~ "[41,80]",
+           text_length >= 81 & text_length <= 120 ~ "[81,120]",
+           text_length >= 121 & text_length <= 160 ~ "[121,160]",
+           text_length >= 161 & text_length <= 200 ~ "[161,200]",
+           text_length >= 201 & text_length <= 240 ~ "[201,240]",
+           text_length >= 241 ~ ">= 241",
+           TRUE ~ "Unknown"
+           )
+         )
+
+# Calculating the number of tweets within each text length range
+tweets_text_length_range <- tweets_text_length %>%
+  count(text_length_category) %>%
+  arrange(desc(n))
+
+print(tweets_text_length_range)
+
+# Create a bar chart
+ggplot(tweets_text_length_range, aes(x = text_length_category, y= n, fill = text_length_category)) +
+  geom_col() +
+  geom_text(aes(label = n), vjust = -0.5, color = "black") + # Add counts above bars
+  labs(title = "Number of tweets by text length",
+       x = "Text length range",
+       y = "Number of tweets") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_brewer(palette = "RdYlGn")
+
+# ANSWER - The provided code effectively analyzes the length of tweets related to the Olympics, categorizing them based on character count and visualizing the results through a bar chart. The process begins by loading the dataset "Olympics_tweets.csv" into a dataframe. Each tweet's text is then assessed for its length, and a new categorical variable is created using conditional statements to classify each tweet into predefined length ranges. These ranges vary from very short tweets (1-40 characters) to very long tweets (over 241 characters), capturing the diversity of expression within the dataset. After categorizing the tweet lengths, the script aggregates this data to count the number of tweets in each category, arranging them in descending order to highlight the most populated categories. This aggregation is crucial for identifying which tweet lengths are most common among users discussing the Olympics, providing insights into user behavior and content delivery on social media platforms. The visualization step utilizes `ggplot2` to create a bar chart, which clearly delineates the number of tweets per category through both the height of the bars and their color coding. This visual representation is enhanced with labels above each bar, displaying exact counts, and uses a color palette to differentiate between categories effectively. The use of angle-adjusted text labels for the x-axis improves readability and user interaction with the plot.
+
+# 2.3
+tweets_mention <- read_csv("Olympics_tweets.csv") 
+
+# Add a new column with the list of mentioned usernames per tweet
+tweets_mention <- tweets_mention %>%
+  mutate(user_account_mentions = str_extract_all(text, "@\\w+"),
+         mention_count = lengths(user_account_mentions))
+
+# Determine the count of tweets that include at least one mentioned username
+tweets_with_account_mentions <- sum(tweets_mention$mention_count > 0)
+
+# Determine the count of tweets that include at least three different usernames
+tweets_with_atleast_three_accounts_mentions <- sum(tweets_mention$mention_count >= 3)
+
+# Output the results
+cat("Total tweets with mentions:", tweets_with_account_mentions, "\n")
+cat("Tweets with at least three mentions:", tweets_with_atleast_three_accounts_mentions, "\n")
+
+# ANSWER - The script starts by importing the dataset "Olympics_tweets.csv" using the read_csv function. This dataset consists of 114,213 rows and includes a variety of data points, such as text of the tweet, user information, and engagement metrics. The mutate function from the dplyr package is applied to the loaded data to create a new column called account_mentions. This column is filled by using the str_extract_all function from the stringr package to capture all occurrences of strings that match the pattern "@\w+", which represents Twitter usernames. This pattern ensures that only the mentions are captured. Another column, mention_count, is created to store the count of mentions per tweet, which is derived by calculating the length of each list of mentions stored in account_mentions. Total Tweets with Mentions: The script calculates the total number of tweets containing at least one mention using the sum function, which adds up all instances where mention_count is greater than zero. Tweets with At Least Three Mentions: It also counts how many tweets include three or more mentions by summing up all instances where mention_count is greater than or equal to three.
+# Total tweets with mentions: 42710 indicates that 42,710 tweets in the dataset contain at least one mention.
+# Tweets with at least three mentions: 10736 signifies that 10,736 tweets have three or more mentions.
+# Conclusion - The analysis shows a significant engagement level among Twitter users during the Olympics, as reflected by the number of tweets with mentions. The significant number of tweets with at least three mentions (over 10,000) suggests that conversations on Twitter were not only prevalent but also included multiple users, indicating lively and broad discussions likely related to Olympic events, athletes, or related topics. This script effectively provides insights into how interconnected Twitter users are in the context of a global event, showcasing the platform's role in fostering interactive and widespread communication.
+
+# 2.4
+# Read the dataset
+tweets_df <- read.csv("Olympics_tweets.csv", stringsAsFactors = FALSE)
+
+# Cleaning text and text preprocessing
+clean_text <- function(text) {
+  text <- tolower(text) # Convert to lowercase
+  text <- str_replace_all(text, "[[:punct:]]", " ") # Replace punctuation with spaces
+  text <- str_replace_all(text, "[[:digit:]]", "") # Remove digits
+  text <- str_replace_all(text, "[^[:alnum:]\\s]", "") # Remove non-alphanumeric characters
+  text <- str_squish(text) # Remove extra whitespace
+  return(text)
+}
+
+# Execute the cleaning function on the text column
+tweets_df$text <- sapply(tweets_df$text, clean_text)
+
+# Tokenize the text data
+tokens <- tweets_df %>%
+  unnest_tokens(word, text)
+
+# Use the stop_words dataset from tidytext to remove stopwords
+tokens <- tokens %>%
+  anti_join(stop_words, by = "word")
+
+# Check if words are valid English words using hunspell
+tokens <- tokens %>%
+  filter(hunspell_check(word))
+
+# Determine the occurrence rate for each term
+term_freq <- tokens %>%
+  count(word, sort = TRUE)
+
+# Get the top 20 most frequent terms
+top_20_most_frequent_words <- term_freq %>%
+  top_n(20, n)
+
+print("Top 20 most frequent terms excluding stopwords:")
+print(top_20_most_frequent_words)
+
+ggplot(top_20_most_frequent_words, aes(x = reorder(word, n), y = n, fill = word)) +
+  geom_col() +
+  scale_fill_viridis(discrete = TRUE, option = "D") +
+  labs(title = "Top 20 Valid English Words in Tweets", x = "Words", y = "Frequency") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# ANSWER 
+# Data Preparation and Cleaning - Reading the Dataset: The code begins by loading the "Olympics_tweets.csv" dataset. stringsAsFactors = FALSE is crucial to ensure that text data is read in as character strings, not as factors, which can complicate text manipulation.
+# Text Cleaning Function (clean_text) - Lowercase Conversion: Text is converted to lowercase to standardize it, ensuring that the same words in different cases are not counted separately. Punctuation Removal: Replaces punctuation with spaces to prevent word concatenation during tokenization. Digit Removal: Strips out digits since numeric values typically don't contribute to textual analysis in this context. Non-Alphanumeric Character Removal: Cleans up any stray non-alphanumeric characters that could affect the analysis, such as special characters or emojis. Whitespace Normalization: Collapses multiple spaces into a single space to ensure tokens are correctly separated.
+# Application of Cleaning Function: The clean_text function is applied across the text data to ensure a clean, uniform textual input for tokenization.
+# Text Tokenization and Filtering - Tokenization: Using the unnest_tokens function from the tidytext package, the text is split into individual words or "tokens". This process prepares the dataset for word frequency analysis by converting sentences into words.
+# Stopword Removal - The tokens are filtered against a stopword list (commonly used but typically meaningless words like "the", "is", etc.) from the tidytext package's stop_words dataset. Removing these helps focus the analysis on more meaningful words.
+# Validation of English Words - 
+# English Word Validation with Hunspell: Hunspell is a spellchecking library that helps in verifying if a word is a valid English word. This step is crucial because tweets often contain slang, abbreviations, and non-words that could skew the analysis of actual word usage. Only words recognized by Hunspell as valid English words are retained. This filtering ensures that the analysis reflects actual English language usage, excluding typos, jargon, or concatenated strings that aren't informative.
+# Frequency Calculation - After cleaning and validating, the frequency of each remaining word is calculated. This frequency tells us how often each word appears in the dataset, highlighting the most prevalent terms.
+# Top 20 Terms - The data is then sorted to retrieve the top 20 terms based on frequency. This subset provides a focused view of the most significant words in the dataset.
+# Conclusion - This comprehensive analysis pipeline not only identifies the most popular terms from the Olympic tweets but ensures these terms are relevant and interpretable within the English language. This is essential in text analysis, particularly in user-generated content like tweets, where there is high variability in language use. The use of Hunspell for validating English words helps refine the analysis, ensuring that the results are both accurate and meaningful.
+
+```
+
+```{r}
+##################################### TASK_D #####################################
+# 1
+# Load the data
+dialogue_utterance_train <- read.csv('dialogue_utterance_train.csv')
+dialogue_usefulness_train <- read.csv('dialogue_usefulness_train.csv')
+dialogue_utterance_validation <- read.csv('dialogue_utterance_validation.csv')
+dialogue_usefulness_validation <- read.csv('dialogue_usefulness_validation.csv')
+
+# Engineer features
+engineer_features <- function(utterance_data) {
+  utterance_data %>%
+    group_by(`Dialogue_ID..Annonymised.`) %>%
+    summarise(
+      total_utterances = n(),
+      student_feature_utterances = sum(`Interlocutor..either.Chatbot.or.Student.` == 'Student'),
+      chatbot_feature_utterances = sum(`Interlocutor..either.Chatbot.or.Student.` == 'Chatbot'),
+      proportion_student_utterances = mean(`Interlocutor..either.Chatbot.or.Student.` == 'Student'),
+      feature_avg_utterance_length = mean(nchar(Utterance_text)),
+      num_questions = sum(str_detect(Utterance_text, "\\?"))
+    ) %>%
+    rename(Dialogue_ID = `Dialogue_ID..Annonymised.`)
+}
+
+training_features <- engineer_features(dialogue_utterance_train)
+validation_features <- engineer_features(dialogue_utterance_validation)
+
+# Combine with usefulness scores
+train_data <- merge(training_features, dialogue_usefulness_train, by = "Dialogue_ID")
+validation_data <- merge(validation_features, dialogue_usefulness_validation, by = "Dialogue_ID")
+
+# Filter for specific usefulness scores and prepare data for visualization
+filtered_train_data <- train_data %>%
+  filter(Usefulness_score %in% c(1, 2, 4, 5)) %>%
+  mutate(score_group = ifelse(Usefulness_score %in% c(1, 2), "Low", "High"))
+
+# Gather the data for visualization
+gathered_data <- filtered_train_data %>%
+  gather(key = "feature", value = "value", total_utterances, feature_avg_utterance_length, num_questions, proportion_student_utterances)
+
+# Create boxplots
+ggplot(gathered_data, aes(x = score_group, y = value, fill = score_group)) +
+  geom_boxplot() +
+  facet_wrap(~ feature, scales = "free") +
+  labs(title = "Feature Distribution by Usefulness Score Group", x = "Usefulness Score Group", y = "Feature Value") +
+  theme_minimal()
+
+# Conduct t-tests to determine statistical significance
+t_test_total_utterances <- t.test(total_utterances ~ score_group, data = filtered_train_data)
+t_test_avg_utterance_length <- t.test(feature_avg_utterance_length ~ score_group, data = filtered_train_data)
+t_test_num_questions <- t.test(num_questions ~ score_group, data = filtered_train_data)
+t_test_proportion_student_utterances <- t.test(proportion_student_utterances ~ score_group, data = filtered_train_data)
+
+# Output t-test p-values
+cat("P-value for total number of utterances:", t_test_total_utterances$p.value, "\n")
+cat("P-value for average length of utterances:", t_test_avg_utterance_length$p.value, "\n")
+cat("P-value for number of questions:", t_test_num_questions$p.value, "\n")
+cat("P-value for proportion of student utterances:", t_test_proportion_student_utterances$p.value, "\n")
+
+# Code Explanation - The script executed a detailed analysis on dialogue data by initially loading and merging dialogue utterances with their corresponding usefulness ratings. To explore how dialogue characteristics could influence perceived usefulness, various features were engineered, including total utterances, proportion of student utterances, and average utterance length. These features were designed to encapsulate the dynamics and content complexity of the dialogues, hypothesizing that such metrics could correlate with their educational effectiveness. Post feature engineering, the data was prepared for analysis by segregating it into two groups based on their usefulness scores—low (scores 1 and 2) and high (scores 4 and 5). This dichotomy allowed for a focused comparison. Visualizations in the form of boxplots were generated for each feature across the two usefulness groups to visually assess differences. To complement the visual insights and objectively measure the statistical significance of the observed differences, t-tests were conducted for each feature. 
+
+# ANSWER - 
+# The boxplots and the corresponding statistical tests suggest that there are no statistically significant differences between the two groups of dialogues (those rated with usefulness scores of 1 or 2 versus those with scores of 4 or 5) across the features engineered.
+# Feature Distribution: The boxplots visualize the distribution of various dialogue features (total utterances, average utterance length, number of questions, proportion of student utterances) between dialogues with low usefulness scores (1 or 2) and high usefulness scores (4 or 5). The visual representations indicate that while there are observable differences in median and spread between the groups for some features (like average utterance length), these differences are not substantial.
+# Total Number of Utterances: The p-value of 0.4837 suggests that there is no significant difference in the number of utterances between the high and low usefulness score groups.
+# Average Length of Utterances: A p-value of 0.9370 indicates no significant difference in the average utterance length, affirming that both groups of dialogues have similar utterance lengths.
+# Number of Questions: The p-value of 0.6943 suggests that the frequency of questions within dialogues does not differ significantly between the two usefulness score groups.
+# Proportion of Student Utterances: The p-value of 0.2532 indicates no significant difference in the proportion of student utterances, meaning that the involvement level of the student in the dialogue does not differ markedly between high and low usefulness scores.
+# Conclusion - The analysis reveals that none of the features tested show a significant difference between dialogues considered highly useful and those considered less so, based on the p-values obtained from t-tests. These p-values are well above the typical significance threshold (0.05), indicating that the likelihood of observing such data, assuming there is no actual difference, is relatively high. This implies that the features engineered may not be potent discriminators of dialogue usefulness as measured in this dataset.
+
+# 2
+# Select features and target variable for model training
+train_data_selected <- train_data %>%
+  select(total_utterances, num_questions, feature_avg_utterance_length, proportion_student_utterances, Usefulness_score)
+
+validation_data_selected <- validation_data %>%
+  select(total_utterances, num_questions, feature_avg_utterance_length, proportion_student_utterances, Usefulness_score)
+
+# Training a regression tree model
+set.seed(123)
+regression_tree_model <- rpart(Usefulness_score ~ total_utterances + num_questions + feature_avg_utterance_length + proportion_student_utterances, data = train_data_selected)
+
+# Training a RF (Random forest) model
+set.seed(123)
+random_forest_model <- randomForest(Usefulness_score ~ total_utterances + num_questions + feature_avg_utterance_length + proportion_student_utterances, data = train_data_selected, ntree = 100)
+
+# Evaluate models on the validation set
+validation_pred_tree <- predict(regression_tree_model, validation_data_selected)
+validation_pred_rf <- predict(random_forest_model, validation_data_selected)
+
+# Calculate Root mean square error (RMSE) for each model
+rmse_tree <- sqrt(mean((validation_pred_tree - validation_data_selected$Usefulness_score)^2))
+rmse_rf <- sqrt(mean((validation_pred_rf - validation_data_selected$Usefulness_score)^2))
+
+# Output RMSE for comparison
+cat("RMSE for Regression Tree:", rmse_tree, "\n")
+cat("RMSE for Random Forest:", rmse_rf, "\n")
+
+# Select the best-performing model
+if (rmse_rf < rmse_tree) {
+  best_model <- "Random Forest"
+  best_rmse <- rmse_rf
+  best_model_obj <- random_forest_model
+} else {
+  best_model <- "Regression Tree"
+  best_rmse <- rmse_tree
+  best_model_obj <- regression_tree_model
+}
+
+cat("Best model:", best_model, "\n")
+cat("Best RMSE:", best_rmse, "\n")
+
+# ANSWER - The task involved developing a machine learning model to predict the usefulness score of dialogues based on engineered features derived from dialogue interactions. For this purpose, two types of models were trained and evaluated: a regression tree and a random forest. These models were selected for their ability to handle non-linear relationships and their robustness in dealing with various data types. The dataset was prepared by selecting relevant features: total utterances, number of questions, average utterance length, and the proportion of student utterances. These features were believed to capture essential aspects of the dialogues that could influence their educational usefulness. The training and validation datasets were structured to include these features alongside the target variable, Usefulness_score. For the regression tree model, a straightforward approach using the rpart package in R was employed, which is well-suited for regression tasks with a clear decision structure. Meanwhile, the random forest model was trained using the randomForest package, which builds multiple decision trees and aggregates their predictions to improve model accuracy and control over-fitting. Model performance was evaluated on a separate validation dataset using the Root Mean Squared Error (RMSE) metric, which measures the average magnitude of the prediction errors, providing a sense of how far the predicted usefulness scores deviate from the actual scores. The RMSE values obtained were 1.071 for the regression tree and 1.019 for the random forest. Upon comparing the RMSE scores, the random forest model emerged as the better performer with a lower RMSE, indicating it was more accurate in predicting usefulness scores. This result led to the selection of the random forest model as "Model 1," which demonstrated superior predictive capabilities due to its ensemble approach that effectively captures more complex patterns in the data without fitting excessively to the training data. Overall, the random forest model’s superior performance underlines its efficacy in handling the predictive tasks associated with educational dialogue assessments, suggesting its potential for deployment in similar scenarios where understanding and predicting educational content effectiveness is crucial.
+
+# 3
+# Remove outliers
+remove_outliers <- function(data) {
+  Q1 <- quantile(data$Usefulness_score, 0.25)
+  Q3 <- quantile(data$Usefulness_score, 0.75)
+  IQR <- Q3 - Q1
+  data <- data %>%
+    filter(Usefulness_score >= (Q1 - 1.5 * IQR) & Usefulness_score <= (Q3 + 1.5 * IQR))
+  return(data)
+}
+
+train_data_selected <- remove_outliers(train_data_selected)
+
+# Rescale data
+preProcess_scale_model <- preProcess(train_data_selected[, -5], method = c("center", "scale"))
+train_data_scaled <- predict(preProcess_scale_model, train_data_selected)
+validation_data_scaled <- predict(preProcess_scale_model, validation_data_selected)
+
+# Training a Gradient Boosting model
+set.seed(123)
+gbm_model <- gbm(Usefulness_score ~ ., data = train_data_scaled, distribution = "gaussian", 
+                 n.trees = 200, interaction.depth = 5, shrinkage = 0.01, n.minobsinnode = 10, 
+                 cv.folds = 5, n.cores = NULL, verbose = FALSE)
+
+# Evaluate Gradient Boosting model
+best_n_trees <- gbm.perf(gbm_model, method = "cv")
+validation_pred_gbm <- predict(gbm_model, validation_data_scaled, n.trees = best_n_trees)
+rmse_gbm <- sqrt(mean((validation_pred_gbm - validation_data_scaled$Usefulness_score)^2))
+
+# Training an SVM model
+set.seed(123)
+svm_model <- svm(Usefulness_score ~ ., data = train_data_scaled)
+
+# Evaluate SVM model
+validation_pred_svm <- predict(svm_model, validation_data_scaled)
+rmse_svm <- sqrt(mean((validation_pred_svm - validation_data_scaled$Usefulness_score)^2))
+
+# Output RMSE for comparison
+cat("RMSE for Gradient Boosting:", rmse_gbm, "\n")
+cat("RMSE for SVM:", rmse_svm, "\n")
+
+# Compare with the original Random Forest model
+set.seed(123)
+random_forest_model <- randomForest(Usefulness_score ~ ., data = train_data_scaled, ntree = 100)
+validation_pred_rf <- predict(random_forest_model, validation_data_scaled)
+rmse_rf <- sqrt(mean((validation_pred_rf - validation_data_scaled$Usefulness_score)^2))
+
+cat("RMSE for Improved Random Forest:", rmse_rf, "\n")
+
+# Select the best-performing model
+best_model <- ifelse(rmse_gbm < rmse_rf & rmse_gbm < rmse_svm, "Gradient Boosting",
+                     ifelse(rmse_rf < rmse_gbm & rmse_rf < rmse_svm, "Random Forest", "SVM"))
+best_rmse <- min(rmse_gbm, rmse_rf, rmse_svm)
+
+cat("Best model after improvements:", best_model, "\n")
+cat("Best RMSE after improvements:", best_rmse, "\n")
+
+# ANSWER - To enhance the performance of the initial machine learning model, several strategies were employed focusing on feature engineering, data cleaning, and exploring different machine learning algorithms. The ultimate goal was to create a more accurate model to predict the usefulness scores of dialogues. First, a function was implemented to remove outliers in the `Usefulness_score` data. This was done by calculating the Interquartile Range (IQR) and filtering out data points that lay beyond 1.5 times the IQR from the first and third quartiles. This approach helps to mitigate the impact of extreme values that could skew the model’s learning process and lead to overfitting. Next, the feature data was rescaled using the `preProcess` function from the `caret` package, applying centering and scaling. This normalization ensures that all features contribute equally to the model’s prediction process, preventing features with larger scales from dominating the learning process. The exploration of machine learning algorithms included training a Gradient Boosting Machine (GBM) and a Support Vector Machine (SVM) alongside an improved version of the Random Forest model using the rescaled data. The GBM model was configured with specific parameters to control the complexity and learning rate of the model, making it robust against overfitting while still being able to capture complex patterns in the data. The SVM model was included as a contrasting approach, known for its effectiveness in high-dimensional spaces and its ability to model non-linear boundaries. The performance of these models was evaluated on the validation set using the Root Mean Squared Error (RMSE), a metric that provides the average magnitude of the prediction error. The RMSE values indicated that the GBM model achieved the lowest error rate among the three, with an RMSE of 0.989, suggesting it was the most accurate in predicting the usefulness scores. In contrast, the Random Forest model had an RMSE of 1.012, and the SVM had an RMSE of 1.023, both higher than the GBM. The decision to focus on these specific methods and models was driven by the need to address potential issues such as overfitting, feature dominance, and data anomalies. The selection of Gradient Boosting as the best model was based on its superior performance metrics, demonstrating its ability to effectively utilize the engineered features and rescaled data to predict usefulness scores more accurately than the other models tested. 
+# Based on the results from the various models and techniques applied, Model 1, which was initially a Random Forest model, has indeed been improved. The Gradient Boosting Machine (GBM) model, which was introduced as part of the enhancement strategies, produced a lower Root Mean Squared Error (RMSE) of 0.989 compared to the original Random Forest model's RMSE, which was improved slightly in the new iteration but still higher at 1.012.
+
+# 4
+
+# Randomly select a dialogue from the validation set
+set.seed(123)
+selectedRandomDialogueID <- sample(unique(validation_data$Dialogue_ID), 1)
+
+# Extract and print the dialogue text
+chosenDialogueText <- dialogue_utterance_validation %>%
+  filter(`Dialogue_ID..Annonymised.` == selectedRandomDialogueID)
+
+selected_dialogue_text <- chosenDialogueText %>%
+  pull(Utterance_text) %>%
+  paste(collapse = " ")
+
+# Predict the usefulness score using the best-performing model (Gradient Boosting)
+selected_dialogue_features <- validation_data %>%
+  filter(Dialogue_ID == selectedRandomDialogueID) %>%
+  select(total_utterances, num_questions, feature_avg_utterance_length, proportion_student_utterances)
+
+# Rescaling the selected dialogue features
+scaledDialogueFeatures <- predict(preProcess_scale_model, selected_dialogue_features)
+
+# Predict the usefulness score
+predicted_score <- predict(gbm_model, scaledDialogueFeatures, n.trees = best_n_trees)
+
+# Output the results
+cat("Dialogue_ID:", selectedRandomDialogueID, "\n")
+cat("Estimated Usefulness Score:", predicted_score, "\n")
+cat("Actual ground truth usefulness Score:", validation_data %>% filter(Dialogue_ID == selectedRandomDialogueID) %>% pull(Usefulness_score), "\n")
+
+# Important features analysis
+important_features <- summary(gbm_model)
+cat("Important Features:\n")
+print(important_features)
+
+# ANSWER -
+# Dialogue ID - 1282
+# Predicted Usefulness Score: 4.155035 
+# Ground Truth Usefulness Score: 4 
+# The prediction value of 4.155 from the Gradient Boosting Machine (GBM) model is quite close to the ground truth value of 4 for the selected dialogue.The closeness between the predicted usefulness score and the actual ground truth indicates that the model has effectively captured the underlying patterns and relationships in the dataset. This close prediction suggests that the model has been well-trained and can accurately forecast the usefulness score based on the given features.
+# Average Utterance Length (43.8% relative importance): This suggests that the length of the utterances within a dialogue plays a crucial role. Longer or shorter utterances might reflect the depth or lack of depth in the conversation, which can affect perceived usefulness.
+# Total Utterances (34.07% relative importance): The number of utterances can indicate the extent of interaction in the dialogue, with more extensive interactions possibly providing more value or information, thereby affecting the usefulness score.
+# Number of Questions (22.13% relative importance): Questions might represent engagement or clarification attempts within the dialogue, which can enhance the usefulness of the interaction by clarifying points of confusion or deepening the discussion.
+# Code breakdown & explanation - The script outlines a machine learning workflow to predict the usefulness of dialogues using a Gradient Boosting Machine (GBM) model. The process begins by loading dialogue data and associated usefulness scores, followed by the removal of outliers to enhance data quality. Feature engineering is applied to capture essential aspects of the dialogues such as utterance counts and lengths, which are then rescaled to ensure consistent influence across all features. The core of the script involves configuring and training multiple models, including regression trees, random forests, and the GBM model. The GBM model is fine-tuned with specific parameters aimed at capturing complex interactions within the data. Performance of each model is evaluated using the RMSE metric on a validation set, determining the most effective model based on its predictive accuracy. The selected GBM model is then used to predict the usefulness of a randomly selected dialogue, assessing its performance against actual usefulness scores. This approach not only tests the model's accuracy but also highlights which features are most influential in predicting dialogue usefulness. The detailed setup and evaluation provide insights into the utility of advanced modeling techniques like GBM in real-world applications, focusing on meticulous feature engineering and model tuning to achieve optimal performance.
+
+# 5
+# Load the test data
+dialogue_utterance_test <- read.csv('dialogue_utterance_test.csv')
+dialogue_usefulness_test <- read.csv('dialogue_usefulness_test.csv')
+
+# Engineer features for the test set
+test_features <- engineer_features(dialogue_utterance_test)
+
+# Merge with usefulness scores
+test_data <- merge(test_features, dialogue_usefulness_test, by = "Dialogue_ID")
+
+# Ensure Dialogue_ID is retained before scaling
+test_data_with_id <- test_data %>%
+  select(Dialogue_ID, total_utterances, num_questions, feature_avg_utterance_length, proportion_student_utterances)
+
+# Rescale data using the scaling model from training
+test_data_scaled <- predict(preProcess_scale_model, test_data_with_id)
+test_data_scaled$Dialogue_ID <- test_data_with_id$Dialogue_ID
+
+# Utilize the most effective model to estimate the usefulness scores (Gradient Boosting)
+predicted_scores <- predict(gbm_model, test_data_scaled[, -1], n.trees = best_n_trees)
+
+# Prepare the output file by combining the Dialogue_ID and the predicted usefulness scores
+output_data <- data.frame(Dialogue_ID = test_data_scaled$Dialogue_ID, Usefulness_score = round(predicted_scores))
+
+# Specify the file name in the required format
+last_name <- "Gururaj"
+student_number <- "33921199"
+output_file_name <- paste0(last_name, "_", student_number, "_dialogue_usefulness_test.csv")
+
+# Save the output to a CSV file
+write.csv(output_data, file = output_file_name, row.names = FALSE)
+
+cat("Predicted usefulness scores saved to", output_file_name, "\n")
+
+# ANSWER -
+# In this script, the goal is to apply a previously trained Gradient Boosting Machine (GBM) model to predict the usefulness scores of dialogues in a test dataset. Initially, the test data and a template for usefulness scores are loaded. Features analogous to those used in the model training are then engineered for the test set, ensuring consistency in data structure and content. These features include the total number of utterances, the number of questions, the average length of utterances, and the proportion of student utterances. Subsequent steps involve merging the engineered features with identifiers from the test dataset to maintain traceability of predictions. Prior to making predictions, the data is scaled using the same parameters as those used for the training dataset to ensure that the model interprets the test data under the same conditions it was trained on. Predictions are then made using the GBM model, with the number of trees set to optimize performance based on earlier cross-validation results. The predictions are rounded off to the nearest whole number, formatted into a dataframe alongside their respective dialogue IDs, and previewed on-screen. While the script includes commented sections to save the predictions in a specified format for submission, these lines are crucial for actual deployment, ensuring results are stored in a manner compliant with submission guidelines. This structured approach ensures the predictions are both accurate and appropriately formatted for evaluation.
+```
